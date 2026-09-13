@@ -7,11 +7,8 @@ import time
 
 warnings.filterwarnings('ignore')
 
-# ==============================================================================
-# STREAMLIT PAGE CONFIGURATION
-# ==============================================================================
 st.set_page_config(
-    page_title="🚀 Degen Solana Hunter V4.2",
+    page_title="🚀 Degen Solana Hunter V4.3",
     page_icon="💎",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -27,33 +24,33 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ==============================================================================
-# CORE HUNTER ENGINE (Fixed Search Logic)
-# ==============================================================================
 class SolanaMemecoinHunter:
-    def __init__(self, min_liquidity=1000, max_age_hours=72, debug_mode=False):
+    def __init__(self, min_liquidity=1000, max_age_hours=24, max_fdv=500000, debug_mode=False):
         self.min_liquidity = min_liquidity
         self.max_age_hours = max_age_hours
+        self.max_fdv = max_fdv
         self.debug_mode = debug_mode
         self.dexscreener_base = "https://api.dexscreener.com/latest/dex"
 
     def test_connection(self):
-        """Test if DexScreener API is reachable"""
         try:
-            url = f"{self.dexscreener_base}/search?q=SOL"
+            url = f"{self.dexscreener_base}/search?q=new"
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             response = requests.get(url, headers=headers, timeout=10)
             return response.status_code == 200
         except Exception:
             return False
 
-    def get_trending_solana_tokens(self):
-        """Get trending Solana tokens using multiple search queries"""
+    def get_new_solana_tokens(self):
+        """Get NEW Solana memecoins using smart search patterns"""
         all_pairs = []
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         
-        # Search for popular Solana terms
-        search_queries = ['SOL', 'RAY', 'ORCA', 'JUP', 'BONK', 'WIF', 'PEPE']
+        # Search for NEW memecoin patterns (not established tokens)
+        search_queries = [
+            'new', 'launch', 'moon', 'gem', '100x', 'early',
+            'dog', 'cat', 'frog', 'meme', 'coin', 'token'
+        ]
         
         for query in search_queries:
             try:
@@ -64,37 +61,43 @@ class SolanaMemecoinHunter:
                     data = response.json()
                     pairs = data.get('pairs', [])
                     
-                    # Filter for Solana chain only
                     for pair in pairs:
                         if pair.get('chainId') == 'solana':
                             all_pairs.append(pair)
                 
-                time.sleep(0.3)  # Rate limiting
+                time.sleep(0.3)
             except Exception as e:
                 if self.debug_mode:
                     st.warning(f"Failed to fetch {query}: {e}")
         
-        # Remove duplicates based on pair address
+        # Remove duplicates
         unique_pairs = {}
         for pair in all_pairs:
             pair_addr = pair.get('pairAddress')
             if pair_addr and pair_addr not in unique_pairs:
                 unique_pairs[pair_addr] = pair
         
-        # Sort by 24h volume (descending)
-        sorted_pairs = sorted(
-            unique_pairs.values(),
-            key=lambda x: float(x.get('volume', {}).get('h24', 0) or 0),
+        # Filter by age FIRST (before sorting)
+        filtered_pairs = []
+        for pair in unique_pairs.values():
+            created_at = pair.get('pairCreatedAt')
+            if created_at:
+                age_hours = (datetime.now().timestamp() * 1000 - created_at) / (1000 * 3600)
+                if age_hours <= self.max_age_hours:
+                    filtered_pairs.append(pair)
+        
+        # Sort by creation time (newest first)
+        filtered_pairs.sort(
+            key=lambda x: x.get('pairCreatedAt', 0),
             reverse=True
         )
         
         if self.debug_mode:
-            st.info(f"🔍 Found {len(sorted_pairs)} unique Solana pairs from {len(search_queries)} search queries")
+            st.info(f"🔍 Found {len(filtered_pairs)} NEW Solana pairs (< {self.max_age_hours}h old) from {len(search_queries)} search queries")
         
-        return sorted_pairs
+        return filtered_pairs
 
     def detect_memecoin_signals(self, pair_data):
-        """Detect memecoin characteristics and assign a Degen Score"""
         signals = []
         risk_flags = []
         score = 0
@@ -107,16 +110,16 @@ class SolanaMemecoinHunter:
 
         # 1. MEMECOIN NARRATIVE DETECTION
         memecoin_keywords = ['doge', 'pepe', 'shib', 'floki', 'inu', 'elon', 'moon', 'safe',
-                             'baby', 'mini', 'rocket', 'ponzi', 'trump', 'biden', 'wojak', 
+                             'baby', 'mini', 'rocket', 'trump', 'biden', 'wojak', 
                              'bonk', 'samo', 'cheems', 'cope', 'giga', 'based', 'sigma',
-                             'meme', 'frog', 'cat', 'dog', 'puppy', 'wif', 'hat', 'cat']
+                             'meme', 'frog', 'cat', 'dog', 'puppy', 'wif', 'hat']
         
         is_memecoin = any(keyword in name_lower or keyword in symbol_lower for keyword in memecoin_keywords)
         if is_memecoin:
             score += 20
             signals.append("🎭 Memecoin narrative detected")
 
-        # 2. PRICE ACTION ANALYSIS (Null-safe)
+        # 2. PRICE ACTION ANALYSIS
         price_change = pair_data.get('priceChange', {}) or {}
         price_change_5m = float(price_change.get('m5', 0) or 0)
         price_change_1h = float(price_change.get('h1', 0) or 0)
@@ -143,10 +146,10 @@ class SolanaMemecoinHunter:
         
         if liquidity_usd < 2000:
             risk_flags.append("🚩 EXTREME LOW LIQ: < $2k (High Rug Risk)")
-            score -= 20
-        elif liquidity_usd > 20000:
+            score -= 10
+        elif liquidity_usd > 10000:
             score += 10
-            signals.append(f"✅ Healthy liquidity: ${liquidity_usd:,.0f}")
+            signals.append(f"✅ Good liquidity: ${liquidity_usd:,.0f}")
 
         # 4. TRANSACTION PRESSURE
         txns = pair_data.get('txns', {}) or {}
@@ -160,27 +163,45 @@ class SolanaMemecoinHunter:
                 score += 15
                 signals.append(f"🐋 Heavy buy pressure: {buy_pressure*100:.0f}% buys (5m)")
 
-        # 5. AGE CHECK
+        # 5. AGE CHECK (CRITICAL FOR NEW LAUNCHES)
         created_at = pair_data.get('pairCreatedAt')
         age_hours = 999
         if created_at:
             age_hours = (datetime.now().timestamp() * 1000 - created_at) / (1000 * 3600)
             if age_hours < 1:
-                score += 15
-                signals.append(f"🆕 Brand new: {age_hours*60:.0f} minutes old")
+                score += 25
+                signals.append(f"🆕 BRAND NEW: {age_hours*60:.0f} minutes old!")
             elif age_hours < 6:
-                score += 10
+                score += 20
                 signals.append(f"🌟 Very new: {age_hours:.1f}h old")
-            elif age_hours > self.max_age_hours:
-                score -= 15
+            elif age_hours < 12:
+                score += 15
+                signals.append(f"✨ Fresh launch: {age_hours:.1f}h old")
+            elif age_hours < 24:
+                score += 10
+                signals.append(f"📊 New: {age_hours:.1f}h old")
 
-        # 6. FREE RUG-CHECK PROXIES
+        # 6. MARKET CAP CHECK (EXCLUDE ESTABLISHED TOKENS)
+        fdv = pair_data.get('fdv')
+        if fdv:
+            fdv_val = float(fdv)
+            if fdv_val > self.max_fdv:
+                score -= 30  # Heavy penalty for large market caps
+                risk_flags.append(f"🔴 Large cap: ${fdv_val:,.0f} (not a gem)")
+            elif fdv_val < 50000:
+                score += 15
+                signals.append(f"💎 Micro cap: ${fdv_val:,.0f} FDV")
+            elif fdv_val < 200000:
+                score += 10
+                signals.append(f"🔹 Small cap: ${fdv_val:,.0f} FDV")
+
+        # 7. FREE RUG-CHECK PROXIES
         info = pair_data.get('info', {}) or {}
         if not info.get('twitter') and not info.get('telegram') and not info.get('website'):
-            risk_flags.append("⚠️ No social links detected (Anonymous dev)")
+            risk_flags.append("⚠️ No social links (Anonymous dev)")
         
         if price_change_24h < -50:
-            risk_flags.append("🔴 Down 50%+ today (Potential death spiral)")
+            risk_flags.append("🔴 Down 50%+ today (Death spiral?)")
 
         return {
             'score': max(0, min(100, score)),
@@ -193,33 +214,35 @@ class SolanaMemecoinHunter:
             'liquidity_usd': liquidity_usd,
             'buys_5m': buys_5m,
             'sells_5m': sells_5m,
-            'age_hours': age_hours
+            'age_hours': age_hours,
+            'fdv': float(fdv) if fdv else 0
         }
 
     def scan_for_gems(self, max_tokens=30, progress_bar=None, status_text=None):
-        """Main scanning function with debug output"""
         if status_text:
-            status_text.text("🔍 Fetching Solana pairs from DexScreener...")
+            status_text.text("🔍 Fetching NEW Solana memecoins from DexScreener...")
         
-        trending_tokens = self.get_trending_solana_tokens()
+        new_tokens = self.get_new_solana_tokens()
         
-        if not trending_tokens:
+        if not new_tokens:
             if self.debug_mode:
-                st.error("❌ No pairs found from API. This could be a rate limit or network issue.")
+                st.error("❌ No NEW pairs found. Try increasing Max Age Hours.")
             return []
         
         if status_text:
-            status_text.text(f"📊 Analyzing {len(trending_tokens)} pairs...")
+            status_text.text(f"📊 Analyzing {len(new_tokens)} new pairs...")
         
         results = []
         seen_addresses = set()
         filtered_count = 0
         major_token_count = 0
         low_liq_count = 0
+        old_token_count = 0
+        large_cap_count = 0
 
-        for i, pair in enumerate(trending_tokens):
+        for i, pair in enumerate(new_tokens):
             if progress_bar:
-                progress_bar.progress(min(1.0, (i + 1) / len(trending_tokens)))
+                progress_bar.progress(min(1.0, (i + 1) / len(new_tokens)))
                 
             if len(results) >= max_tokens:
                 break
@@ -237,15 +260,25 @@ class SolanaMemecoinHunter:
 
             analysis = self.detect_memecoin_signals(pair)
             
+            # Filter by liquidity
             if analysis['liquidity_usd'] < self.min_liquidity:
                 low_liq_count += 1
+                continue
+            
+            # Filter by age (double-check)
+            if analysis['age_hours'] > self.max_age_hours:
+                old_token_count += 1
+                continue
+            
+            # Filter by market cap
+            if analysis['fdv'] > self.max_fdv:
+                large_cap_count += 1
                 continue
 
             current_price = float(pair.get('priceUsd', 0) or 0)
             if current_price == 0:
                 continue
             
-            # Degen Entry/Exit Logic
             entry = current_price
             stop_loss = entry * 0.80
             tp1, tp2, tp3, tp4 = entry * 1.5, entry * 2.5, entry * 5.0, entry * 10.0
@@ -266,6 +299,7 @@ class SolanaMemecoinHunter:
                 'volume_24h': analysis['volume_24h'],
                 'buy_pressure_5m': round((analysis['buys_5m'] / (analysis['buys_5m'] + analysis['sells_5m'])) * 100, 1) if (analysis['buys_5m'] + analysis['sells_5m']) > 0 else 50.0,
                 'age_hours': analysis['age_hours'],
+                'fdv': analysis['fdv'],
                 'url': pair.get('url', ''),
                 'stop_loss': stop_loss,
                 'tp1': tp1, 'tp2': tp2, 'tp3': tp3, 'tp4': tp4
@@ -279,9 +313,11 @@ class SolanaMemecoinHunter:
             st.markdown(f"""
             <div class="debug-box">
             <strong>🔍 Scan Debug Info:</strong><br>
-            • Total pairs fetched: {len(trending_tokens)}<br>
+            • Total NEW pairs fetched: {len(new_tokens)}<br>
             • Major tokens skipped: {major_token_count}<br>
             • Low liquidity filtered: {low_liq_count}<br>
+            • Old tokens filtered: {old_token_count}<br>
+            • Large cap filtered: {large_cap_count}<br>
             • Gems found: {len(results)}
             </div>
             """, unsafe_allow_html=True)
@@ -289,30 +325,28 @@ class SolanaMemecoinHunter:
         return results
 
 # ==============================================================================
-# STREAMLIT UI LAYOUT
+# STREAMLIT UI
 # ==============================================================================
-st.markdown('<div class="main-header">💎 DEGEN SOLANA HUNTER V4.2 💎</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Free system for finding high-potential Solana memecoins 🚀</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">💎 DEGEN SOLANA HUNTER V4.3 💎</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Finds NEW Solana memecoins with 10-100x potential 🚀</div>', unsafe_allow_html=True)
 
-# Sidebar Configuration
 st.sidebar.header("⚙️ Degen Configuration")
-min_liq = st.sidebar.slider("Min Liquidity ($)", 500, 100000, 1000, step=500, help="Lower for ultra-degen, higher for safer plays")
-max_age = st.sidebar.slider("Max Age (Hours)", 1, 168, 72)
+min_liq = st.sidebar.slider("Min Liquidity ($)", 500, 50000, 1000, step=500, help="Lower = more degen")
+max_age = st.sidebar.slider("Max Age (Hours)", 1, 168, 24, help="Only show tokens newer than this")
+max_fdv = st.sidebar.slider("Max Market Cap ($)", 50000, 5000000, 500000, step=50000, help="Exclude large established tokens")
 max_tokens = st.sidebar.slider("Tokens to Scan", 10, 100, 30)
 debug_mode = st.sidebar.checkbox("🐛 Debug Mode", help="Show detailed filtering info")
 
 st.sidebar.markdown("---")
-st.sidebar.info("**How it works:**\n1. Searches for popular Solana DEX tokens (SOL, RAY, BONK, etc.)\n2. Filters for Solana chain only\n3. Sorts by 24h volume to find trending pairs\n4. Scores on volume, buy pressure, age, and narrative\n5. Flags rug risks (low liq, no socials, death spirals)")
+st.sidebar.info("**V4.3 Changes:**\n• Only shows tokens < Max Age hours old\n• Excludes tokens with market cap > Max FDV\n• Heavily scores brand new launches\n• Filters out established tokens like PEPE, BONK")
 
-# Test Connection Button
 if st.sidebar.button("🔌 Test API Connection"):
     hunter_test = SolanaMemecoinHunter(debug_mode=debug_mode)
     if hunter_test.test_connection():
         st.sidebar.success("✅ Successfully connected to DexScreener API!")
     else:
-        st.sidebar.error("❌ Failed to connect. Check your internet or try again later.")
+        st.sidebar.error("❌ Failed to connect.")
 
-# Main Execution Area
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     scan_button = st.button("🔥 START GEM HUNT", type="primary", use_container_width=True)
@@ -321,10 +355,15 @@ if scan_button:
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    hunter = SolanaMemecoinHunter(min_liquidity=min_liq, max_age_hours=max_age, debug_mode=debug_mode)
+    hunter = SolanaMemecoinHunter(
+        min_liquidity=min_liq, 
+        max_age_hours=max_age, 
+        max_fdv=max_fdv,
+        debug_mode=debug_mode
+    )
     
     if not hunter.test_connection():
-        st.error("❌ Cannot reach DexScreener API. Please check your internet connection or try again in a few minutes.")
+        st.error("❌ Cannot reach DexScreener API.")
         st.stop()
     
     gems = hunter.scan_for_gems(max_tokens=max_tokens, progress_bar=progress_bar, status_text=status_text)
@@ -333,16 +372,14 @@ if scan_button:
     status_text.empty()
     
     if not gems:
-        st.warning("⚠️ No gems found matching your criteria. Try lowering the Min Liquidity slider or enabling Debug Mode to see what's being filtered.")
+        st.warning("⚠️ No NEW gems found. Try increasing Max Age Hours or Max Market Cap.")
     else:
         st.session_state['gems'] = gems
 
-# Display Results
 if 'gems' in st.session_state and st.session_state['gems']:
     gems = st.session_state['gems']
     
-    # Top Metrics
-    st.markdown("### 🏆 Top Opportunities")
+    st.markdown("### 🏆 Top NEW Opportunities")
     cols = st.columns(3)
     cols[0].metric("Total Gems Found", len(gems))
     high_conviction = [g for g in gems if g['score'] >= 70]
@@ -352,11 +389,10 @@ if 'gems' in st.session_state and st.session_state['gems']:
 
     st.markdown("---")
 
-    # Detailed Gem Cards
     for i, gem in enumerate(gems[:15], 1):
         score_color = "🔴" if gem['score'] < 50 else "🟡" if gem['score'] < 70 else "🟢"
         
-        with st.expander(f"#{i} {score_color} **${gem['symbol']}** - {gem['name']} | Score: **{gem['score']}/100** | Liq: **${gem['liquidity_usd']:,.0f}**", expanded=(i <= 3)):
+        with st.expander(f"#{i} {score_color} **${gem['symbol']}** - {gem['name']} | Score: **{gem['score']}/100** | Age: **{gem['age_hours']:.1f}h** | Liq: **${gem['liquidity_usd']:,.0f}**", expanded=(i <= 3)):
             
             col_a, col_b = st.columns(2)
             
@@ -364,6 +400,7 @@ if 'gems' in st.session_state and st.session_state['gems']:
                 st.markdown(f"**Contract:** `{gem['address']}`")
                 st.markdown(f"**Price:** `${gem['price']:.10f}`")
                 st.markdown(f"**Age:** `{gem['age_hours']:.1f}` hours")
+                st.markdown(f"**Market Cap:** `${gem['fdv']:,.0f}`")
                 st.markdown(f"**24h Volume:** `${gem['volume_24h']:,.0f}`")
             
             with col_b:
@@ -401,7 +438,6 @@ if 'gems' in st.session_state and st.session_state['gems']:
 
             st.markdown(f"[🔗 View on DexScreener]({gem['url']}) | [🔍 View Contract on Solscan](https://solscan.io/token/{gem['address']})")
 
-    # Export to CSV
     st.markdown("---")
     st.markdown("### 📥 Export Data")
     df = pd.DataFrame(gems)
@@ -409,24 +445,22 @@ if 'gems' in st.session_state and st.session_state['gems']:
     st.download_button(
         label="📥 Download Gems as CSV",
         data=csv,
-        file_name=f"solana_gems_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        file_name=f"solana_new_gems_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
     )
 
 else:
-    st.info("👈 Configure your settings in the sidebar and click **START GEM HUNT** to begin scanning.")
+    st.info("👈 Configure your settings and click **START GEM HUNT** to find NEW memecoins.")
 
-# Footer Disclaimer
 st.markdown("---")
 st.markdown("""
 <div style="background-color: #2b0000; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #FF4B4B;">
     <h3 style="color: #FF4B4B; margin-top: 0;">⚠️ ULTIMATE DEGEN DISCLAIMER</h3>
     <ul style="color: #FFCCCC; line-height: 1.6;">
-        <li><strong>This is a free, educational tool.</strong> It uses public DexScreener data. It does NOT check on-chain mint/freeze authority (requires paid RPC).</li>
-        <li><strong>90%+ of memecoins go to ZERO.</strong> You will get rugged. Multiple times.</li>
-        <li><strong>Never invest money you cannot afford to lose completely.</strong> This is gambling, not investing.</li>
-        <li><strong>Always verify contracts</strong> on Solscan or RugCheck.xyz before buying.</li>
-        <li><strong>Take profits on the way up.</strong> Memecoins can dump 99% in minutes.</li>
+        <li><strong>This finds BRAND NEW tokens</strong> - most will go to ZERO within hours</li>
+        <li><strong>90%+ are rugs or scams.</strong> Always check RugCheck.xyz before buying</li>
+        <li><strong>Never invest more than you can afford to lose completely</strong></li>
+        <li><strong>Take profits FAST</strong> - new memecoins dump 99% in minutes</li>
     </ul>
     <p style="color: #FFCCCC; font-weight: bold; text-align: center; margin-bottom: 0;">DYOR. NFA. Trade responsibly. 🫡</p>
 </div>
