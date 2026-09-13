@@ -4,11 +4,12 @@ import requests
 import warnings
 from datetime import datetime
 import time
+import re
 
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
-    page_title="🚀 Degen Solana Hunter V5.2",
+    page_title="🚀 Degen Solana Hunter V5.3",
     page_icon="💎",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -21,8 +22,178 @@ st.markdown("""
     .risk-flag {color: #FF4B4B; font-weight: bold;}
     .bullish-signal {color: #00FF00; font-weight: bold;}
     .debug-box {background-color: #1a1a1a; padding: 1rem; border-radius: 0.5rem; font-family: monospace; font-size: 0.9rem;}
+    .social-badge {display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.3rem; margin: 0.1rem; font-size: 0.8rem;}
+    .social-twitter {background-color: #1DA1F2; color: white;}
+    .social-telegram {background-color: #0088cc; color: white;}
+    .social-website {background-color: #28a745; color: white;}
+    .social-none {background-color: #dc3545; color: white;}
     </style>
 """, unsafe_allow_html=True)
+
+class SocialSentimentAnalyzer:
+    """Free social sentiment analysis without API keys"""
+    
+    @staticmethod
+    def check_telegram_members(telegram_url):
+        """Try to get Telegram member count (works for public groups)"""
+        if not telegram_url:
+            return None
+        
+        try:
+            # Convert to t.me format if needed
+            if 't.me/' in telegram_url:
+                username = telegram_url.split('t.me/')[-1].split('?')[0].split('/')[0]
+            elif 'telegram.me/' in telegram_url:
+                username = telegram_url.split('telegram.me/')[-1].split('?')[0].split('/')[0]
+            else:
+                return None
+            
+            # Try to fetch Telegram channel info via web preview
+            url = f"https://t.me/{username}"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(url, headers=headers, timeout=5)
+            
+            # Look for member count in page
+            if response.status_code == 200:
+                # Try to find member count pattern
+                match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*(?:members|subscribers)', response.text, re.I)
+                if match:
+                    members = int(match.group(1).replace(',', ''))
+                    return members
+            return None
+        except Exception:
+            return None
+    
+    @staticmethod
+    def check_twitter_followers(twitter_url):
+        """Try to get Twitter follower count"""
+        if not twitter_url:
+            return None
+        
+        try:
+            # Extract username
+            if 'twitter.com/' in twitter_url:
+                username = twitter_url.split('twitter.com/')[-1].split('?')[0].split('/')[0]
+            elif 'x.com/' in twitter_url:
+                username = twitter_url.split('x.com/')[-1].split('?')[0].split('/')[0]
+            else:
+                return None
+            
+            # Use Nitter (privacy Twitter frontend) - no API key needed
+            nitter_url = f"https://nitter.net/{username}"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(nitter_url, headers=headers, timeout=5)
+            
+            if response.status_code == 200:
+                # Look for follower count
+                match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*Followers', response.text)
+                if match:
+                    followers = int(match.group(1).replace(',', ''))
+                    return followers
+            return None
+        except Exception:
+            return None
+    
+    @staticmethod
+    def search_reddit_mentions(symbol, name):
+        """Search Reddit for coin mentions (last 24h)"""
+        try:
+            # Search Reddit JSON API (free, no auth)
+            queries = [symbol, name]
+            total_posts = 0
+            total_comments = 0
+            
+            for query in queries[:2]:  # Limit to 2 queries
+                url = f"https://www.reddit.com/search.json?q={query}&sort=new&t=day&limit=25"
+                headers = {"User-Agent": "Mozilla/5.0"}
+                response = requests.get(url, headers=headers, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    posts = data.get('data', {}).get('children', [])
+                    total_posts += len(posts)
+                    
+                    # Count comments
+                    for post in posts:
+                        comments = post.get('data', {}).get('num_comments', 0)
+                        total_comments += comments
+            
+            return {
+                'posts_24h': total_posts,
+                'comments_24h': total_comments,
+                'engagement_score': total_posts + (total_comments * 0.5)
+            }
+        except Exception:
+            return {'posts_24h': 0, 'comments_24h': 0, 'engagement_score': 0}
+    
+    @staticmethod
+    def analyze_social_presence(info):
+        """Analyze social media presence from DexScreener info"""
+        twitter = info.get('twitter')
+        telegram = info.get('telegram')
+        website = info.get('website')
+        
+        social_score = 0
+        social_badges = []
+        
+        # Check Twitter
+        if twitter:
+            followers = SocialSentimentAnalyzer.check_twitter_followers(twitter)
+            if followers:
+                if followers > 10000:
+                    social_score += 30
+                    social_badges.append(f"🐦 Twitter: {followers:,} followers")
+                elif followers > 1000:
+                    social_score += 20
+                    social_badges.append(f"🐦 Twitter: {followers:,} followers")
+                elif followers > 100:
+                    social_score += 10
+                    social_badges.append(f"🐦 Twitter: {followers:,} followers")
+                else:
+                    social_score += 5
+                    social_badges.append("🐦 Twitter (small)")
+            else:
+                social_score += 5
+                social_badges.append("🐦 Twitter")
+        else:
+            social_badges.append("❌ No Twitter")
+        
+        # Check Telegram
+        if telegram:
+            members = SocialSentimentAnalyzer.check_telegram_members(telegram)
+            if members:
+                if members > 5000:
+                    social_score += 30
+                    social_badges.append(f"✈️ Telegram: {members:,} members")
+                elif members > 1000:
+                    social_score += 20
+                    social_badges.append(f"✈️ Telegram: {members:,} members")
+                elif members > 100:
+                    social_score += 10
+                    social_badges.append(f"✈️ Telegram: {members:,} members")
+                else:
+                    social_score += 5
+                    social_badges.append("✈️ Telegram (small)")
+            else:
+                social_score += 5
+                social_badges.append("✈️ Telegram")
+        else:
+            social_badges.append(" No Telegram")
+        
+        # Check Website
+        if website:
+            social_score += 10
+            social_badges.append(" Website")
+        else:
+            social_badges.append("❌ No Website")
+        
+        return {
+            'social_score': min(100, social_score),
+            'badges': social_badges,
+            'has_twitter': bool(twitter),
+            'has_telegram': bool(telegram),
+            'has_website': bool(website)
+        }
 
 class SolanaMemecoinHunter:
     def __init__(self, min_liquidity=1000, max_age_hours=24, max_fdv=500000, debug_mode=False):
@@ -31,6 +202,7 @@ class SolanaMemecoinHunter:
         self.max_fdv = max_fdv
         self.debug_mode = debug_mode
         self.dexscreener_base = "https://api.dexscreener.com/latest/dex"
+        self.social_analyzer = SocialSentimentAnalyzer()
 
     def test_connection(self):
         try:
@@ -42,12 +214,11 @@ class SolanaMemecoinHunter:
             return False
 
     def get_new_solana_tokens(self):
-        """Get new Solana tokens by searching for DEX protocols and filtering by age"""
+        """Get new Solana tokens"""
         all_pairs = []
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         
-        # Search for actual DEX protocols on Solana (not random words)
-        dex_queries = ['raydium', 'orca', 'meteora', 'jupiter']
+        dex_queries = ['raydium', 'orca', 'meteora']
         
         for query in dex_queries:
             try:
@@ -59,35 +230,29 @@ class SolanaMemecoinHunter:
                     pairs = data.get('pairs', [])
                     
                     for pair in pairs:
-                        # Only Solana chain
                         if pair.get('chainId') != 'solana':
                             continue
                         
-                        # Get creation time
                         created_at = pair.get('pairCreatedAt')
                         if not created_at:
                             continue
                         
-                        # Calculate age in hours
                         age_hours = (datetime.now().timestamp() * 1000 - created_at) / (1000 * 3600)
                         
-                        # Only keep tokens within max age
                         if age_hours <= self.max_age_hours:
                             all_pairs.append(pair)
                 
-                time.sleep(0.4)  # Respect rate limits
+                time.sleep(0.4)
             except Exception as e:
                 if self.debug_mode:
                     st.warning(f"Failed to fetch {query}: {e}")
         
-        # Remove duplicates
         unique_pairs = {}
         for pair in all_pairs:
             pair_addr = pair.get('pairAddress')
             if pair_addr and pair_addr not in unique_pairs:
                 unique_pairs[pair_addr] = pair
         
-        # Sort by creation time (newest first)
         sorted_pairs = sorted(
             unique_pairs.values(),
             key=lambda x: x.get('pairCreatedAt', 0),
@@ -100,15 +265,16 @@ class SolanaMemecoinHunter:
         return sorted_pairs
 
     def convert_pair_to_gem(self, pair_data):
-        """Convert DexScreener pair to gem format"""
+        """Convert DexScreener pair to gem format with social data"""
         base_token = pair_data.get('baseToken', {}) or {}
         symbol = base_token.get('symbol', 'UNK')
         name = base_token.get('name', 'Unknown')
         address = base_token.get('address', '')
         
-        # Skip if name contains "dex" (filter out DEX tokens)
         if 'dex' in name.lower() or 'dex' in symbol.lower():
             return None
+        
+        info = pair_data.get('info', {}) or {}
         
         price_change = pair_data.get('priceChange', {}) or {}
         price_change_5m = float(price_change.get('m5', 0) or 0)
@@ -142,6 +308,12 @@ class SolanaMemecoinHunter:
         
         buy_pressure = round((buys_5m / (buys_5m + sells_5m)) * 100, 1) if (buys_5m + sells_5m) > 0 else 50.0
         
+        # Analyze social presence
+        social_data = self.social_analyzer.analyze_social_presence(info)
+        
+        # Search Reddit mentions (only for top tokens to avoid rate limits)
+        reddit_data = {'posts_24h': 0, 'comments_24h': 0, 'engagement_score': 0}
+        
         return {
             'symbol': symbol,
             'name': name,
@@ -164,11 +336,20 @@ class SolanaMemecoinHunter:
             'stop_loss': stop_loss,
             'tp1': tp1, 'tp2': tp2, 'tp3': tp3, 'tp4': tp4,
             'buys_5m': buys_5m,
-            'sells_5m': sells_5m
+            'sells_5m': sells_5m,
+            'social_score': social_data['social_score'],
+            'social_badges': social_data['badges'],
+            'has_social': social_data['has_twitter'] or social_data['has_telegram'],
+            'reddit_posts_24h': reddit_data['posts_24h'],
+            'reddit_comments_24h': reddit_data['comments_24h'],
+            'reddit_engagement': reddit_data['engagement_score'],
+            'twitter_url': info.get('twitter'),
+            'telegram_url': info.get('telegram'),
+            'website_url': info.get('website')
         }
 
     def detect_memecoin_signals(self, gem):
-        """Score and analyze a gem"""
+        """Score and analyze a gem with social metrics"""
         signals = []
         risk_flags = []
         score = 0
@@ -191,9 +372,6 @@ class SolanaMemecoinHunter:
         if gem['price_change_5m'] > 20:
             score += 15
             signals.append(f"🚀 Strong 5m pump: +{gem['price_change_5m']:.1f}%")
-        elif gem['price_change_5m'] > 10:
-            score += 10
-            signals.append(f"📈 5m pump: +{gem['price_change_5m']:.1f}%")
         
         if 10 < gem['price_change_1h'] < 50:
             score += 10
@@ -218,19 +396,16 @@ class SolanaMemecoinHunter:
             score += 15
             signals.append(f"🐋 Heavy buy pressure: {gem['buy_pressure_5m']:.0f}% buys")
 
-        # 5. AGE CHECK (CRITICAL)
+        # 5. AGE CHECK
         if gem['age_hours'] < 1:
             score += 25
-            signals.append(f"🆕 BRAND NEW: {gem['age_hours']*60:.0f} minutes old!")
+            signals.append(f" BRAND NEW: {gem['age_hours']*60:.0f} minutes old!")
         elif gem['age_hours'] < 6:
             score += 20
-            signals.append(f"🌟 Very new: {gem['age_hours']:.1f}h old")
+            signals.append(f" Very new: {gem['age_hours']:.1f}h old")
         elif gem['age_hours'] < 12:
             score += 15
             signals.append(f"✨ Fresh: {gem['age_hours']:.1f}h old")
-        elif gem['age_hours'] < 24:
-            score += 10
-            signals.append(f"📊 New: {gem['age_hours']:.1f}h old")
 
         # 6. MARKET CAP
         if gem['fdv'] > 0:
@@ -240,11 +415,23 @@ class SolanaMemecoinHunter:
             elif gem['fdv'] < 50000:
                 score += 15
                 signals.append(f"💎 Micro cap: ${gem['fdv']:,.0f}")
-            elif gem['fdv'] < 200000:
-                score += 10
-                signals.append(f"🔹 Small cap: ${gem['fdv']:,.0f}")
 
-        # 7. RUG CHECKS
+        # 7. SOCIAL SENTIMENT (NEW!)
+        if gem['social_score'] >= 60:
+            score += 20
+            signals.append(f"💬 Strong social presence (score: {gem['social_score']})")
+        elif gem['social_score'] >= 30:
+            score += 10
+            signals.append(f"💬 Moderate social presence")
+        elif gem['social_score'] == 0:
+            risk_flags.append("🚩 No social media presence")
+            score -= 20
+
+        if gem['reddit_engagement'] > 10:
+            score += 10
+            signals.append(f"📢 Reddit buzz: {gem['reddit_posts_24h']} posts, {gem['reddit_comments_24h']} comments")
+
+        # 8. RUG CHECKS
         if gem['price_change_24h'] < -50:
             risk_flags.append("🔴 Down 50%+ today")
 
@@ -257,23 +444,20 @@ class SolanaMemecoinHunter:
 
     def scan_for_gems(self, max_tokens=30, progress_bar=None, status_text=None):
         if status_text:
-            status_text.text("🔍 Fetching NEW Solana pairs from DexScreener...")
+            status_text.text("🔍 Fetching NEW Solana pairs...")
         
         new_pairs = self.get_new_solana_tokens()
         
         if not new_pairs:
             if self.debug_mode:
-                st.error("❌ No new pairs found. Try increasing Max Age Hours.")
+                st.error("❌ No new pairs found.")
             return []
         
         if status_text:
-            status_text.text(f"📊 Analyzing {len(new_pairs)} new pairs...")
+            status_text.text(f"📊 Analyzing {len(new_pairs)} pairs with social metrics...")
         
         results = []
         seen_addresses = set()
-        filtered_dex = 0
-        filtered_liq = 0
-        filtered_cap = 0
         
         for i, pair in enumerate(new_pairs):
             if progress_bar:
@@ -285,8 +469,6 @@ class SolanaMemecoinHunter:
             gem = self.convert_pair_to_gem(pair)
             
             if gem is None:
-                if 'dex' in str(pair.get('baseToken', {}).get('name', '')).lower():
-                    filtered_dex += 1
                 continue
             
             addr = gem['address']
@@ -294,30 +476,30 @@ class SolanaMemecoinHunter:
                 continue
             seen_addresses.add(addr)
             
-            # Apply filters
             if gem['liquidity_usd'] < self.min_liquidity:
-                filtered_liq += 1
                 continue
             
             if gem['fdv'] > self.max_fdv:
-                filtered_cap += 1
                 continue
             
             gem = self.detect_memecoin_signals(gem)
             results.append(gem)
-            time.sleep(0.2)
+            
+            # Progress update with social analysis
+            if status_text and i % 5 == 0:
+                status_text.text(f"📊 Analyzing... ({i+1}/{len(new_pairs)}) Checking social metrics...")
+            
+            time.sleep(0.3)
         
         results.sort(key=lambda x: x['score'], reverse=True)
         
         if self.debug_mode:
             st.markdown(f"""
             <div class="debug-box">
-            <strong>🔍 Scan Debug Info:</strong><br>
-            • Total new pairs found: {len(new_pairs)}<br>
-            • Filtered (DEX tokens): {filtered_dex}<br>
-            • Filtered (low liquidity): {filtered_liq}<br>
-            • Filtered (large cap): {filtered_cap}<br>
-            • Gems found: {len(results)}
+            <strong>🔍 Scan Complete:</strong><br>
+            • Total new pairs: {len(new_pairs)}<br>
+            • Gems found: {len(results)}<br>
+            • Avg social score: {sum(g['social_score'] for g in results)/len(results):.0f} if results else 0
             </div>
             """, unsafe_allow_html=True)
         
@@ -326,25 +508,25 @@ class SolanaMemecoinHunter:
 # ==============================================================================
 # STREAMLIT UI
 # ==============================================================================
-st.markdown('<div class="main-header">💎 DEGEN SOLANA HUNTER V5.2 💎</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Finds NEW Solana memecoins from Raydium/Orca/Meteora 🚀</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">💎 DEGEN SOLANA HUNTER V5.3 💎</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">With Social Sentiment & Community Analysis </div>', unsafe_allow_html=True)
 
 st.sidebar.header("⚙️ Degen Configuration")
 min_liq = st.sidebar.slider("Min Liquidity ($)", 500, 50000, 1000, step=500)
-max_age = st.sidebar.slider("Max Age (Hours)", 1, 168, 24, help="Only show tokens newer than this")
+max_age = st.sidebar.slider("Max Age (Hours)", 1, 168, 24)
 max_fdv = st.sidebar.slider("Max Market Cap ($)", 50000, 5000000, 500000, step=50000)
-max_tokens = st.sidebar.slider("Tokens to Scan", 10, 100, 30)
+max_tokens = st.sidebar.slider("Tokens to Scan", 10, 100, 20)
 debug_mode = st.sidebar.checkbox("🐛 Debug Mode")
 
 st.sidebar.markdown("---")
-st.sidebar.info("**V5.2 - Smart Filtering:**\n• Searches Raydium, Orca, Meteora pairs\n• Filters by creation time (NEW only)\n• Excludes DEX tokens\n• Filters by liquidity & market cap\n• Real new launches!")
+st.sidebar.info("**V5.3 - Social Sentiment:**\n• Analyzes Twitter follower count\n• Checks Telegram member count\n• Searches Reddit mentions (24h)\n• Social presence scoring\n• Community engagement metrics")
 
 if st.sidebar.button("🔌 Test API Connection"):
     hunter_test = SolanaMemecoinHunter(debug_mode=debug_mode)
     if hunter_test.test_connection():
-        st.sidebar.success("✅ Connected to DexScreener!")
+        st.sidebar.success("✅ Connected!")
     else:
-        st.sidebar.error("❌ Failed to connect.")
+        st.sidebar.error("❌ Failed.")
 
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
@@ -371,27 +553,27 @@ if scan_button:
     status_text.empty()
     
     if not gems:
-        st.warning("⚠️ No gems found. Try increasing Max Age Hours or lowering Min Liquidity.")
+        st.warning("️ No gems found.")
     else:
         st.session_state['gems'] = gems
 
 if 'gems' in st.session_state and st.session_state['gems']:
     gems = st.session_state['gems']
     
-    st.markdown("### 🏆 Top NEW Opportunities")
+    st.markdown("### 🏆 Top Opportunities with Social Metrics")
     cols = st.columns(3)
     cols[0].metric("Total Gems", len(gems))
     high_conviction = [g for g in gems if g['score'] >= 70]
     cols[1].metric("High Conviction (70+)", len(high_conviction))
-    avg_age = sum(g['age_hours'] for g in gems) / len(gems) if gems else 0
-    cols[2].metric("Avg Age", f"{avg_age:.1f}h")
+    avg_social = sum(g['social_score'] for g in gems) / len(gems) if gems else 0
+    cols[2].metric("Avg Social Score", f"{avg_social:.0f}/100")
 
     st.markdown("---")
 
     for i, gem in enumerate(gems[:15], 1):
-        score_color = "🔴" if gem['score'] < 50 else "🟡" if gem['score'] < 70 else "🟢"
+        score_color = "🔴" if gem['score'] < 50 else "🟡" if gem['score'] < 70 else ""
         
-        with st.expander(f"#{i} {score_color} **${gem['symbol']}** - {gem['name']} | Score: **{gem['score']}/100** | Age: **{gem['age_hours']:.1f}h**", expanded=(i <= 3)):
+        with st.expander(f"#{i} {score_color} **${gem['symbol']}** | Score: **{gem['score']}/100** | Social: **{gem['social_score']}/100**", expanded=(i <= 3)):
             
             col_a, col_b = st.columns(2)
             
@@ -401,14 +583,34 @@ if 'gems' in st.session_state and st.session_state['gems']:
                 st.markdown(f"**Age:** `{gem['age_hours']:.1f}` hours")
                 st.markdown(f"**Market Cap:** `${gem['fdv']:,.0f}`")
                 st.markdown(f"**Liquidity:** `${gem['liquidity_usd']:,.0f}`")
-                st.markdown(f"**24h Volume:** `${gem['volume_24h']:,.0f}`")
             
             with col_b:
                 st.markdown("**📈 Price Action:**")
-                st.markdown(f"• 5m: `{'+' if gem['price_change_5m'] > 0 else ''}{gem['price_change_5m']:.2f}%`")
-                st.markdown(f"• 1h: `{'+' if gem['price_change_1h'] > 0 else ''}{gem['price_change_1h']:.2f}%`")
-                st.markdown(f"• 24h: `{'+' if gem['price_change_24h'] > 0 else ''}{gem['price_change_24h']:.2f}%`")
-                st.markdown(f"**🐋 Buy Pressure (5m):** `{gem['buy_pressure_5m']:.1f}%`")
+                st.markdown(f"• 5m: `{gem['price_change_5m']:+.2f}%`")
+                st.markdown(f"• 1h: `{gem['price_change_1h']:+.2f}%`")
+                st.markdown(f"• 24h: `{gem['price_change_24h']:+.2f}%`")
+                st.markdown(f"**🐋 Buy Pressure:** `{gem['buy_pressure_5m']:.1f}%`")
+
+            # Social Media Section
+            st.markdown("---")
+            st.markdown("**📱 Social Media Presence:**")
+            
+            # Display social badges
+            badges_html = ""
+            for badge in gem['social_badges']:
+                if 'Twitter' in badge:
+                    badges_html += f'<span class="social-badge social-twitter">{badge}</span>'
+                elif 'Telegram' in badge:
+                    badges_html += f'<span class="social-badge social-telegram">{badge}</span>'
+                elif 'Website' in badge:
+                    badges_html += f'<span class="social-badge social-website">{badge}</span>'
+                elif 'No' in badge:
+                    badges_html += f'<span class="social-badge social-none">{badge}</span>'
+            
+            st.markdown(badges_html, unsafe_allow_html=True)
+            
+            if gem['reddit_engagement'] > 0:
+                st.markdown(f"**📢 Reddit Activity (24h):** {gem['reddit_posts_24h']} posts, {gem['reddit_comments_24h']} comments")
 
             st.markdown("---")
             
@@ -427,42 +629,53 @@ if 'gems' in st.session_state and st.session_state['gems']:
                     for sig in gem['signals']:
                         st.markdown(f"<span class='bullish-signal'>• {sig}</span>", unsafe_allow_html=True)
                 else:
-                    st.markdown("No strong signals yet")
+                    st.markdown("No strong signals")
 
-            st.markdown("**🎯 Degen Entry/Exit Plan:**")
+            st.markdown("**🎯 Entry/Exit:**")
             plan_cols = st.columns(5)
             plan_cols[0].metric("Entry", f"${gem['price']:.8f}")
-            plan_cols[1].metric("Stop Loss", f"${gem['stop_loss']:.8f}", "-20%")
-            plan_cols[2].metric("TP1 (50%)", f"${gem['tp1']:.8f}", "+50%")
-            plan_cols[3].metric("TP2 (150%)", f"${gem['tp2']:.8f}", "+150%")
-            plan_cols[4].metric("TP3 (400%)", f"${gem['tp3']:.8f}", "+400%")
+            plan_cols[1].metric("Stop", f"${gem['stop_loss']:.8f}", "-20%")
+            plan_cols[2].metric("TP1", f"${gem['tp1']:.8f}", "+50%")
+            plan_cols[3].metric("TP2", f"${gem['tp2']:.8f}", "+150%")
+            plan_cols[4].metric("TP3", f"${gem['tp3']:.8f}", "+400%")
 
-            st.markdown(f"[🔗 View on DexScreener]({gem['url']}) | [🔍 View on Solscan](https://solscan.io/token/{gem['address']})")
+            # Links
+            links = []
+            if gem['url']:
+                links.append(f"[ DexScreener]({gem['url']})")
+            if gem['twitter_url']:
+                links.append(f"[🐦 Twitter]({gem['twitter_url']})")
+            if gem['telegram_url']:
+                links.append(f"[✈️ Telegram]({gem['telegram_url']})")
+            if gem['website_url']:
+                links.append(f"[🌐 Website]({gem['website_url']})")
+            links.append(f"[ Solscan](https://solscan.io/token/{gem['address']})")
+            
+            st.markdown(" | ".join(links))
 
     st.markdown("---")
-    st.markdown("### 📥 Export Data")
     df = pd.DataFrame(gems)
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="📥 Download Gems as CSV",
+        label="📥 Download CSV",
         data=csv,
-        file_name=f"solana_new_gems_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        file_name=f"solana_gems_social_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
     )
 
 else:
-    st.info("👈 Configure settings and click **START GEM HUNT**")
+    st.info("👈 Configure and click **START GEM HUNT**")
 
 st.markdown("---")
 st.markdown("""
 <div style="background-color: #2b0000; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #FF4B4B;">
-    <h3 style="color: #FF4B4B; margin-top: 0;">⚠️ ULTIMATE DEGEN DISCLAIMER</h3>
+    <h3 style="color: #FF4B4B; margin-top: 0;">⚠️ DEGEN DISCLAIMER</h3>
     <ul style="color: #FFCCCC; line-height: 1.6;">
-        <li><strong>New memecoins are EXTREMELY high risk</strong> - 99% go to zero</li>
-        <li><strong>Always check RugCheck.xyz</strong> before buying</li>
-        <li><strong>Never invest more than you can afford to lose</strong></li>
-        <li><strong>Take profits FAST</strong> - most dump within hours</li>
+        <li><strong>Social metrics can be faked</strong> - bots, bought followers, fake Telegram members</li>
+        <li><strong>High social score ≠ safe investment</strong> - many scams have huge communities</li>
+        <li><strong>Always DYOR</strong> - check RugCheck.xyz, read the contract, verify team</li>
+        <li><strong>99% of new memecoins fail</strong> - only invest what you can lose</li>
     </ul>
-    <p style="color: #FFCCCC; font-weight: bold; text-align: center; margin-bottom: 0;">DYOR. NFA. Trade responsibly. 🫡</p>
+    <p style="color: #FFCCCC; font-weight: bold; text-align: center; margin-bottom: 0;">NFA. Trade responsibly. 🫡</p>
 </div>
 """, unsafe_allow_html=True)
