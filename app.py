@@ -4,12 +4,11 @@ import requests
 import warnings
 from datetime import datetime
 import time
-import re
 
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
-    page_title="🚀 Degen Solana Hunter V5.3.1",
+    page_title="🚀 Degen Solana Hunter V5.4",
     page_icon="💎",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -22,139 +21,159 @@ st.markdown("""
     .risk-flag {color: #FF4B4B; font-weight: bold;}
     .bullish-signal {color: #00FF00; font-weight: bold;}
     .debug-box {background-color: #1a1a1a; padding: 1rem; border-radius: 0.5rem; font-family: monospace; font-size: 0.9rem;}
-    .social-badge {display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.3rem; margin: 0.1rem; font-size: 0.8rem;}
-    .social-twitter {background-color: #1DA1F2; color: white;}
-    .social-telegram {background-color: #0088cc; color: white;}
-    .social-website {background-color: #28a745; color: white;}
-    .social-none {background-color: #dc3545; color: white;}
+    .social-badge {display: inline-block; padding: 0.4rem 0.8rem; border-radius: 0.3rem; margin: 0.2rem; font-size: 0.9rem; text-decoration: none; color: white !important; font-weight: bold;}
+    .social-twitter {background-color: #1DA1F2;}
+    .social-telegram {background-color: #0088cc;}
+    .social-website {background-color: #28a745;}
+    .social-none {background-color: #6c757d;}
+    .security-safe {background-color: #d4edda; color: #155724; padding: 0.3rem 0.6rem; border-radius: 0.3rem; display: inline-block; margin: 0.1rem;}
+    .security-warn {background-color: #fff3cd; color: #856404; padding: 0.3rem 0.6rem; border-radius: 0.3rem; display: inline-block; margin: 0.1rem;}
+    .security-danger {background-color: #f8d7da; color: #721c24; padding: 0.3rem 0.6rem; border-radius: 0.3rem; display: inline-block; margin: 0.1rem;}
     </style>
 """, unsafe_allow_html=True)
 
-class SocialSentimentAnalyzer:
-    """Free social sentiment analysis without API keys"""
+class RugCheckAnalyzer:
+    """Free security + social analysis via RugCheck.xyz API (NO API KEY NEEDED)"""
     
     @staticmethod
-    def check_telegram_members(telegram_url):
-        """Try to get Telegram member count"""
-        if not telegram_url:
+    def get_token_report(mint_address):
+        """Get full token report from RugCheck (social + security data)"""
+        if not mint_address:
             return None
         
         try:
-            if 't.me/' in telegram_url:
-                username = telegram_url.split('t.me/')[-1].split('?')[0].split('/')[0]
-            elif 'telegram.me/' in telegram_url:
-                username = telegram_url.split('telegram.me/')[-1].split('?')[0].split('/')[0]
-            else:
-                return None
-            
-            url = f"https://t.me/{username}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = requests.get(url, headers=headers, timeout=5)
+            url = f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report/summary"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            response = requests.get(url, headers=headers, timeout=10)
             
             if response.status_code == 200:
-                match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*(?:members|subscribers)', response.text, re.I)
-                if match:
-                    members = int(match.group(1).replace(',', ''))
-                    return members
+                return response.json()
             return None
-        except Exception:
+        except Exception as e:
             return None
     
     @staticmethod
-    def check_twitter_followers(twitter_url):
-        """Try to get Twitter follower count"""
-        if not twitter_url:
-            return None
+    def analyze_token(mint_address):
+        """Extract social + security data from RugCheck report"""
+        report = RugCheckAnalyzer.get_token_report(mint_address)
         
-        try:
-            if 'twitter.com/' in twitter_url:
-                username = twitter_url.split('twitter.com/')[-1].split('?')[0].split('/')[0]
-            elif 'x.com/' in twitter_url:
-                username = twitter_url.split('x.com/')[-1].split('?')[0].split('/')[0]
-            else:
-                return None
-            
-            nitter_url = f"https://nitter.net/{username}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = requests.get(nitter_url, headers=headers, timeout=5)
-            
-            if response.status_code == 200:
-                match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*Followers', response.text)
-                if match:
-                    followers = int(match.group(1).replace(',', ''))
-                    return followers
-            return None
-        except Exception:
-            return None
-    
-    @staticmethod
-    def analyze_social_presence(info):
-        """Analyze social media presence from DexScreener info"""
-        twitter = info.get('twitter')
-        telegram = info.get('telegram')
-        website = info.get('website')
-        
-        social_score = 0
-        social_badges = []
-        
-        # Check Twitter
-        if twitter:
-            followers = SocialSentimentAnalyzer.check_twitter_followers(twitter)
-            if followers:
-                if followers > 10000:
-                    social_score += 30
-                    social_badges.append(f"🐦 Twitter: {followers:,} followers")
-                elif followers > 1000:
-                    social_score += 20
-                    social_badges.append(f"🐦 Twitter: {followers:,} followers")
-                elif followers > 100:
-                    social_score += 10
-                    social_badges.append(f"🐦 Twitter: {followers:,} followers")
-                else:
-                    social_score += 5
-                    social_badges.append("🐦 Twitter (small)")
-            else:
-                social_score += 5
-                social_badges.append("🐦 Twitter")
-        else:
-            social_badges.append("❌ No Twitter")
-        
-        # Check Telegram
-        if telegram:
-            members = SocialSentimentAnalyzer.check_telegram_members(telegram)
-            if members:
-                if members > 5000:
-                    social_score += 30
-                    social_badges.append(f"✈️ Telegram: {members:,} members")
-                elif members > 1000:
-                    social_score += 20
-                    social_badges.append(f"✈️ Telegram: {members:,} members")
-                elif members > 100:
-                    social_score += 10
-                    social_badges.append(f"✈️ Telegram: {members:,} members")
-                else:
-                    social_score += 5
-                    social_badges.append("✈️ Telegram (small)")
-            else:
-                social_score += 5
-                social_badges.append("✈️ Telegram")
-        else:
-            social_badges.append("❌ No Telegram")
-        
-        # Check Website
-        if website:
-            social_score += 10
-            social_badges.append("🌐 Website")
-        else:
-            social_badges.append("❌ No Website")
-        
-        return {
-            'social_score': min(100, social_score),
-            'badges': social_badges,
-            'has_twitter': bool(twitter),
-            'has_telegram': bool(telegram),
-            'has_website': bool(website)
+        # Default values
+        result = {
+            'social_score': 0,
+            'social_badges': [],
+            'twitter_url': None,
+            'telegram_url': None,
+            'website_url': None,
+            'has_twitter': False,
+            'has_telegram': False,
+            'has_website': False,
+            'security_score': 0,
+            'security_badges': [],
+            'mint_authority': None,
+            'freeze_authority': None,
+            'top_holders': [],
+            'lp_locked': False,
+            'risk_level': 'unknown',
+            'rugcheck_available': False
         }
+        
+        if not report:
+            return result
+        
+        result['rugcheck_available'] = True
+        
+        # Extract social links
+        metadata = report.get('tokenMeta', {}) or {}
+        twitter = metadata.get('twitter')
+        telegram = metadata.get('telegram')
+        website = metadata.get('website')
+        
+        if twitter:
+            result['twitter_url'] = twitter
+            result['has_twitter'] = True
+            result['social_score'] += 25
+            result['social_badges'].append(('🐦 Twitter', twitter, 'social-twitter'))
+        
+        if telegram:
+            result['telegram_url'] = telegram
+            result['has_telegram'] = True
+            result['social_score'] += 25
+            result['social_badges'].append(('✈️ Telegram', telegram, 'social-telegram'))
+        
+        if website:
+            result['website_url'] = website
+            result['has_website'] = True
+            result['social_score'] += 15
+            result['social_badges'].append(('🌐 Website', website, 'social-website'))
+        
+        # If no social links at all
+        if not (twitter or telegram or website):
+            result['social_badges'].append(('❌ No Social Links', None, 'social-none'))
+        
+        # Extract security data
+        mint_authority = metadata.get('mintAuthority')
+        freeze_authority = metadata.get('freezeAuthority')
+        
+        result['mint_authority'] = mint_authority
+        result['freeze_authority'] = freeze_authority
+        
+        # Mint authority check
+        if mint_authority is None or mint_authority == '':
+            result['security_score'] += 30
+            result['security_badges'].append(('✅ Mint Authority: REVOKED', 'safe'))
+        else:
+            result['security_score'] -= 30
+            result['security_badges'].append(('🚨 Mint Authority: ACTIVE (can mint more!)', 'danger'))
+        
+        # Freeze authority check
+        if freeze_authority is None or freeze_authority == '':
+            result['security_score'] += 20
+            result['security_badges'].append(('✅ Freeze Authority: REVOKED', 'safe'))
+        else:
+            result['security_score'] -= 20
+            result['security_badges'].append(('🚨 Freeze Authority: ACTIVE (can freeze wallets!)', 'danger'))
+        
+        # Top holders analysis
+        top_holders = report.get('topHolders', []) or []
+        result['top_holders'] = top_holders[:10]
+        
+        # Check if top 10 holders own too much
+        if top_holders:
+            # Skip LP and known system accounts
+            non_lp_holders = [h for h in top_holders if not h.get('isMutable', False)]
+            if len(non_lp_holders) >= 2:
+                top_2_pct = sum(h.get('pct', 0) for h in non_lp_holders[:2])
+                if top_2_pct > 30:
+                    result['security_score'] -= 20
+                    result['security_badges'].append((f'⚠️ Top 2 holders own {top_2_pct:.1f}%', 'warn'))
+                elif top_2_pct > 15:
+                    result['security_score'] -= 10
+                    result['security_badges'].append((f'⚠️ Top 2 holders own {top_2_pct:.1f}%', 'warn'))
+                else:
+                    result['security_score'] += 10
+                    result['security_badges'].append((f'✅ Healthy distribution (top 2: {top_2_pct:.1f}%)', 'safe'))
+        
+        # Risk level from RugCheck
+        risk_level = report.get('risk', {}) or {}
+        risk_score = risk_level.get('score', 0)
+        risk_level_name = risk_level.get('level', 'unknown')
+        result['risk_level'] = risk_level_name
+        
+        if risk_level_name == 'good':
+            result['security_score'] += 20
+            result['security_badges'].append(('🛡️ RugCheck: GOOD', 'safe'))
+        elif risk_level_name == 'warning':
+            result['security_badges'].append(('⚠️ RugCheck: WARNING', 'warn'))
+        elif risk_level_name == 'danger':
+            result['security_score'] -= 30
+            result['security_badges'].append(('🚨 RugCheck: DANGER', 'danger'))
+        
+        # Normalize scores
+        result['social_score'] = min(100, max(0, result['social_score']))
+        result['security_score'] = min(100, max(0, result['security_score']))
+        
+        return result
+
 
 class SolanaMemecoinHunter:
     def __init__(self, min_liquidity=1000, max_age_hours=24, max_fdv=500000, debug_mode=False):
@@ -163,7 +182,7 @@ class SolanaMemecoinHunter:
         self.max_fdv = max_fdv
         self.debug_mode = debug_mode
         self.dexscreener_base = "https://api.dexscreener.com/latest/dex"
-        self.social_analyzer = SocialSentimentAnalyzer()
+        self.rugcheck = RugCheckAnalyzer()
 
     def test_connection(self):
         try:
@@ -226,7 +245,7 @@ class SolanaMemecoinHunter:
         return sorted_pairs
 
     def convert_pair_to_gem(self, pair_data):
-        """Convert DexScreener pair to gem format with social data"""
+        """Convert DexScreener pair to gem format with RugCheck data"""
         base_token = pair_data.get('baseToken', {}) or {}
         symbol = base_token.get('symbol', 'UNK')
         name = base_token.get('name', 'Unknown')
@@ -234,8 +253,6 @@ class SolanaMemecoinHunter:
         
         if 'dex' in name.lower() or 'dex' in symbol.lower():
             return None
-        
-        info = pair_data.get('info', {}) or {}
         
         price_change = pair_data.get('priceChange', {}) or {}
         price_change_5m = float(price_change.get('m5', 0) or 0)
@@ -269,8 +286,8 @@ class SolanaMemecoinHunter:
         
         buy_pressure = round((buys_5m / (buys_5m + sells_5m)) * 100, 1) if (buys_5m + sells_5m) > 0 else 50.0
         
-        # Analyze social presence
-        social_data = self.social_analyzer.analyze_social_presence(info)
+        # Get RugCheck data (social + security)
+        rugcheck_data = self.rugcheck.analyze_token(address)
         
         return {
             'symbol': symbol,
@@ -295,19 +312,25 @@ class SolanaMemecoinHunter:
             'tp1': tp1, 'tp2': tp2, 'tp3': tp3, 'tp4': tp4,
             'buys_5m': buys_5m,
             'sells_5m': sells_5m,
-            'social_score': social_data['social_score'],
-            'social_badges': social_data['badges'],
-            'has_social': social_data['has_twitter'] or social_data['has_telegram'],
-            'reddit_posts_24h': 0,
-            'reddit_comments_24h': 0,
-            'reddit_engagement': 0,
-            'twitter_url': info.get('twitter'),
-            'telegram_url': info.get('telegram'),
-            'website_url': info.get('website')
+            # Social data from RugCheck
+            'social_score': rugcheck_data['social_score'],
+            'social_badges': rugcheck_data['social_badges'],
+            'twitter_url': rugcheck_data['twitter_url'],
+            'telegram_url': rugcheck_data['telegram_url'],
+            'website_url': rugcheck_data['website_url'],
+            'has_social': rugcheck_data['has_twitter'] or rugcheck_data['has_telegram'],
+            # Security data from RugCheck
+            'security_score': rugcheck_data['security_score'],
+            'security_badges': rugcheck_data['security_badges'],
+            'mint_authority': rugcheck_data['mint_authority'],
+            'freeze_authority': rugcheck_data['freeze_authority'],
+            'top_holders': rugcheck_data['top_holders'],
+            'risk_level': rugcheck_data['risk_level'],
+            'rugcheck_available': rugcheck_data['rugcheck_available']
         }
 
     def detect_memecoin_signals(self, gem):
-        """Score and analyze a gem with social metrics"""
+        """Score and analyze a gem with social + security metrics"""
         signals = []
         risk_flags = []
         score = 0
@@ -323,7 +346,7 @@ class SolanaMemecoinHunter:
         
         is_memecoin = any(keyword in name_lower or keyword in symbol_lower for keyword in memecoin_keywords)
         if is_memecoin:
-            score += 20
+            score += 15
             signals.append("🎭 Memecoin narrative detected")
 
         # 2. PRICE ACTION
@@ -356,13 +379,13 @@ class SolanaMemecoinHunter:
 
         # 5. AGE CHECK
         if gem['age_hours'] < 1:
-            score += 25
+            score += 20
             signals.append(f"🆕 BRAND NEW: {gem['age_hours']*60:.0f} minutes old!")
         elif gem['age_hours'] < 6:
-            score += 20
+            score += 15
             signals.append(f"🌟 Very new: {gem['age_hours']:.1f}h old")
         elif gem['age_hours'] < 12:
-            score += 15
+            score += 10
             signals.append(f"✨ Fresh: {gem['age_hours']:.1f}h old")
 
         # 6. MARKET CAP
@@ -371,22 +394,34 @@ class SolanaMemecoinHunter:
                 score -= 30
                 risk_flags.append(f"🔴 Large cap: ${gem['fdv']:,.0f}")
             elif gem['fdv'] < 50000:
-                score += 15
+                score += 10
                 signals.append(f"💎 Micro cap: ${gem['fdv']:,.0f}")
 
-        # 7. SOCIAL SENTIMENT
+        # 7. SOCIAL SENTIMENT (from RugCheck)
         social_score = gem.get('social_score', 0)
-        if social_score >= 60:
-            score += 20
-            signals.append(f"💬 Strong social presence (score: {social_score})")
-        elif social_score >= 30:
-            score += 10
-            signals.append(f"💬 Moderate social presence")
+        if social_score >= 50:
+            score += 15
+            signals.append(f"💬 Strong social presence ({social_score}/100)")
+        elif social_score >= 25:
+            score += 8
+            signals.append(f"💬 Some social presence")
         elif social_score == 0:
-            risk_flags.append("🚩 No social media presence")
-            score -= 20
+            risk_flags.append("🚩 No social media (anonymous dev)")
+            score -= 15
 
-        # 8. RUG CHECKS
+        # 8. SECURITY SCORE (from RugCheck) - NEW!
+        security_score = gem.get('security_score', 0)
+        if security_score >= 60:
+            score += 20
+            signals.append(f"🛡️ Strong security ({security_score}/100)")
+        elif security_score >= 30:
+            score += 5
+            signals.append(f"🛡️ Moderate security")
+        elif security_score < 0:
+            risk_flags.append(f"🚨 SECURITY RISKS DETECTED ({security_score}/100)")
+            score -= 25
+
+        # 9. RUG CHECKS
         if gem['price_change_24h'] < -50:
             risk_flags.append("🔴 Down 50%+ today")
 
@@ -409,7 +444,7 @@ class SolanaMemecoinHunter:
             return []
         
         if status_text:
-            status_text.text(f"📊 Analyzing {len(new_pairs)} pairs with social metrics...")
+            status_text.text(f"📊 Analyzing {len(new_pairs)} pairs with RugCheck...")
         
         results = []
         seen_addresses = set()
@@ -420,6 +455,9 @@ class SolanaMemecoinHunter:
             
             if len(results) >= max_tokens:
                 break
+            
+            if status_text and i % 3 == 0:
+                status_text.text(f"🔍 Analyzing... ({i+1}/{len(new_pairs)}) Fetching social + security data from RugCheck...")
             
             gem = self.convert_pair_to_gem(pair)
             
@@ -440,21 +478,20 @@ class SolanaMemecoinHunter:
             gem = self.detect_memecoin_signals(gem)
             results.append(gem)
             
-            if status_text and i % 5 == 0:
-                status_text.text(f"📊 Analyzing... ({i+1}/{len(new_pairs)}) Checking social metrics...")
-            
-            time.sleep(0.3)
+            time.sleep(0.5)  # Respect RugCheck rate limits
         
         results.sort(key=lambda x: x['score'], reverse=True)
         
         if self.debug_mode and results:
             avg_social = sum(g.get('social_score', 0) for g in results) / len(results)
+            avg_security = sum(g.get('security_score', 0) for g in results) / len(results)
             st.markdown(f"""
             <div class="debug-box">
             <strong>🔍 Scan Complete:</strong><br>
             • Total new pairs: {len(new_pairs)}<br>
             • Gems found: {len(results)}<br>
-            • Avg social score: {avg_social:.0f}/100
+            • Avg social score: {avg_social:.0f}/100<br>
+            • Avg security score: {avg_security:.0f}/100
             </div>
             """, unsafe_allow_html=True)
         
@@ -463,18 +500,18 @@ class SolanaMemecoinHunter:
 # ==============================================================================
 # STREAMLIT UI
 # ==============================================================================
-st.markdown('<div class="main-header">💎 DEGEN SOLANA HUNTER V5.3.1 💎</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">With Social Sentiment & Community Analysis 📱</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">💎 DEGEN SOLANA HUNTER V5.4 💎</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">With RugCheck Security + Social Analysis 🛡️📱</div>', unsafe_allow_html=True)
 
 st.sidebar.header("⚙️ Degen Configuration")
 min_liq = st.sidebar.slider("Min Liquidity ($)", 500, 50000, 1000, step=500)
 max_age = st.sidebar.slider("Max Age (Hours)", 1, 168, 24)
 max_fdv = st.sidebar.slider("Max Market Cap ($)", 50000, 5000000, 500000, step=50000)
-max_tokens = st.sidebar.slider("Tokens to Scan", 10, 100, 20)
+max_tokens = st.sidebar.slider("Tokens to Scan", 5, 50, 15, help="Lower = faster scan (RugCheck rate limits)")
 debug_mode = st.sidebar.checkbox("🐛 Debug Mode")
 
 st.sidebar.markdown("---")
-st.sidebar.info("**V5.3.1 - Social Sentiment:**\n• Analyzes Twitter follower count\n• Checks Telegram member count\n• Social presence scoring\n• Community engagement metrics")
+st.sidebar.info("**V5.4 - RugCheck Integration:**\n• ✅ FREE social links (Twitter/Telegram/Website)\n• ✅ FREE mint authority check\n• ✅ FREE freeze authority check\n• ✅ FREE top holders analysis\n• ✅ FREE RugCheck risk score\n• NO API KEY NEEDED!")
 
 if st.sidebar.button("🔌 Test API Connection"):
     hunter_test = SolanaMemecoinHunter(debug_mode=debug_mode)
@@ -515,20 +552,23 @@ if scan_button:
 if 'gems' in st.session_state and st.session_state['gems']:
     gems = st.session_state['gems']
     
-    st.markdown("### 🏆 Top Opportunities with Social Metrics")
-    cols = st.columns(3)
+    st.markdown("### 🏆 Top Opportunities")
+    cols = st.columns(4)
     cols[0].metric("Total Gems", len(gems))
     high_conviction = [g for g in gems if g['score'] >= 70]
     cols[1].metric("High Conviction (70+)", len(high_conviction))
     avg_social = sum(g.get('social_score', 0) for g in gems) / len(gems) if gems else 0
-    cols[2].metric("Avg Social Score", f"{avg_social:.0f}/100")
+    cols[2].metric("Avg Social", f"{avg_social:.0f}/100")
+    avg_security = sum(g.get('security_score', 0) for g in gems) / len(gems) if gems else 0
+    cols[3].metric("Avg Security", f"{avg_security:.0f}/100")
 
     st.markdown("---")
 
     for i, gem in enumerate(gems[:15], 1):
         score_color = "🔴" if gem['score'] < 50 else "🟡" if gem['score'] < 70 else "🟢"
+        sec_emoji = "🛡️" if gem.get('security_score', 0) >= 60 else "⚠️" if gem.get('security_score', 0) >= 30 else "🚨"
         
-        with st.expander(f"#{i} {score_color} **${gem['symbol']}** | Score: **{gem['score']}/100** | Social: **{gem.get('social_score', 0)}/100**", expanded=(i <= 3)):
+        with st.expander(f"#{i} {score_color} **${gem['symbol']}** | Score: **{gem['score']}/100** | Social: **{gem.get('social_score', 0)}** | Security: **{sec_emoji}{gem.get('security_score', 0)}**", expanded=(i <= 3)):
             
             col_a, col_b = st.columns(2)
             
@@ -546,22 +586,34 @@ if 'gems' in st.session_state and st.session_state['gems']:
                 st.markdown(f"• 24h: `{gem['price_change_24h']:+.2f}%`")
                 st.markdown(f"**🐋 Buy Pressure:** `{gem['buy_pressure_5m']:.1f}%`")
 
-            # Social Media Section
+            # SOCIAL MEDIA SECTION (FIXED!)
             st.markdown("---")
             st.markdown("**📱 Social Media Presence:**")
             
-            badges_html = ""
-            for badge in gem.get('social_badges', []):
-                if 'Twitter' in badge:
-                    badges_html += f'<span class="social-badge social-twitter">{badge}</span>'
-                elif 'Telegram' in badge:
-                    badges_html += f'<span class="social-badge social-telegram">{badge}</span>'
-                elif 'Website' in badge:
-                    badges_html += f'<span class="social-badge social-website">{badge}</span>'
-                elif 'No' in badge or '❌' in badge:
-                    badges_html += f'<span class="social-badge social-none">{badge}</span>'
+            social_badges = gem.get('social_badges', [])
+            if social_badges:
+                badges_html = ""
+                for badge_text, badge_url, badge_class in social_badges:
+                    if badge_url:
+                        badges_html += f'<a href="{badge_url}" target="_blank" class="social-badge {badge_class}">{badge_text}</a>'
+                    else:
+                        badges_html += f'<span class="social-badge {badge_class}">{badge_text}</span>'
+                st.markdown(badges_html, unsafe_allow_html=True)
+            else:
+                st.warning("❌ No social links found on RugCheck")
+
+            # SECURITY SECTION (NEW BONUS!)
+            st.markdown("---")
+            st.markdown("**🛡️ Security Analysis (from RugCheck):**")
             
-            st.markdown(badges_html, unsafe_allow_html=True)
+            security_badges = gem.get('security_badges', [])
+            if security_badges:
+                sec_html = ""
+                for badge_text, badge_type in security_badges:
+                    sec_html += f'<span class="security-{badge_type}">{badge_text}</span>'
+                st.markdown(sec_html, unsafe_allow_html=True)
+            else:
+                st.info("ℹ️ Security data not available for this token")
 
             st.markdown("---")
             
@@ -594,12 +646,7 @@ if 'gems' in st.session_state and st.session_state['gems']:
             links = []
             if gem['url']:
                 links.append(f"[🔗 DexScreener]({gem['url']})")
-            if gem.get('twitter_url'):
-                links.append(f"[🐦 Twitter]({gem['twitter_url']})")
-            if gem.get('telegram_url'):
-                links.append(f"[✈️ Telegram]({gem['telegram_url']})")
-            if gem.get('website_url'):
-                links.append(f"[🌐 Website]({gem['website_url']})")
+            links.append(f"[🛡️ RugCheck](https://rugcheck.xyz/tokens/{gem['address']})")
             links.append(f"[🔍 Solscan](https://solscan.io/token/{gem['address']})")
             
             st.markdown(" | ".join(links))
@@ -610,7 +657,7 @@ if 'gems' in st.session_state and st.session_state['gems']:
     st.download_button(
         label="📥 Download CSV",
         data=csv,
-        file_name=f"solana_gems_social_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        file_name=f"solana_gems_v54_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
     )
 
@@ -622,9 +669,9 @@ st.markdown("""
 <div style="background-color: #2b0000; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #FF4B4B;">
     <h3 style="color: #FF4B4B; margin-top: 0;">⚠️ DEGEN DISCLAIMER</h3>
     <ul style="color: #FFCCCC; line-height: 1.6;">
-        <li><strong>Social metrics can be faked</strong> - bots, bought followers, fake Telegram members</li>
-        <li><strong>High social score ≠ safe investment</strong> - many scams have huge communities</li>
-        <li><strong>Always DYOR</strong> - check RugCheck.xyz, read the contract, verify team</li>
+        <li><strong>Social metrics can be faked</strong> - bought followers, bot groups</li>
+        <li><strong>Security checks are helpful but NOT foolproof</strong> - always DYOR</li>
+        <li><strong>Even "safe" tokens can rug</strong> - dev can still dump their holdings</li>
         <li><strong>99% of new memecoins fail</strong> - only invest what you can lose</li>
     </ul>
     <p style="color: #FFCCCC; font-weight: bold; text-align: center; margin-bottom: 0;">NFA. Trade responsibly. 🫡</p>
